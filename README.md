@@ -4,7 +4,7 @@ Infrastructure network connectivity diagnostics for policy analysts.
 
 ---
 
-Public agencies collect infrastructure geometry -- bike lanes, transit corridors, power lines, water mains -- as GeoJSON or shapefiles. But answering "how connected is this network?" typically requires GIS software, spatial databases, or writing graph code from scratch. infragap does it in three lines of Python: load a GeoJSON file, run a diagnosis, read the results.
+Public agencies collect infrastructure geometry such as bike lanes, transit corridors, power lines, water mains as GeoJSON or shapefiles. Yet answering "how connected is this network?" typically requires GIS software, spatial databases, or writing graph code from scratch. Existing tools like OSMnx build graphs from OpenStreetMap road topology, which works well for streets but misrepresents cycling and other non-road infrastructure since connections are inferred from shared OSM nodes rather than physical proximity, and filtering to a single infrastructure type breaks the topology. infragap works directly on GeoJSON geometry, using spatial clustering to detect connections from the coordinates themselves.
 
 ```python
 import infragap
@@ -35,7 +35,7 @@ print(report)
     Edge connectivity        0
 ```
 
-Reading this output: Milan's bike lane network is heavily fragmented. Only 11.8% of the total infrastructure length sits in the largest connected component -- the rest is stranded in 329 smaller, disconnected clusters. The beta index (0.94) and alpha index (0.01) show a tree-like network with almost no route redundancy, and 2,524 of the network's edges are bridges (single points of failure whose removal would disconnect part of the network).
+Reading this output: this particular bike lane network is heavily fragmented. Only 11.8% of the total infrastructure length sits in the largest connected component with  the rest being stranded in 329 smaller, disconnected clusters. The beta index (0.94) and alpha index (0.01) show a tree-like network with almost no route redundancy, and 2,524 of the network's edges are bridges (single points of failure whose removal would disconnect part of the network).
 
 ---
 
