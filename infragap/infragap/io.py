@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 
 
 def load_geojson(path):
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
     results = []
     for feature in data["features"]:
