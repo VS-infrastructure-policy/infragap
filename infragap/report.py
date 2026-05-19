@@ -1,5 +1,9 @@
 import json
+import logging
+
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 class Report:
@@ -71,7 +75,7 @@ class ZoneReport:
 
     def to_excel(self, path):
         self.df.to_excel(path, index=False)
-        print(f"Saved to {path}")
+        logger.info("Saved to %s", path)
 
     def to_geojson(self, path):
         features = []
@@ -97,4 +101,4 @@ class ZoneReport:
         collection = {"type": "FeatureCollection", "features": features}
         with open(path, "w") as f:
             json.dump(collection, f)
-        print(f"Saved to {path}")
+        logger.info("Saved to %s", path)

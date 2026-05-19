@@ -1,18 +1,17 @@
+import logging
+
 from shapely.ops import transform
 import pyproj
 
+logger = logging.getLogger(__name__)
 
-def detect_crs(file_longitude, file_latitude):
-    utm_zone = min(int((file_longitude + 180) / 6) + 1, 60)
-    if file_latitude < 0:
-        project_crs = f"EPSG:327{utm_zone:02d}"
-    else:
-        project_crs = f"EPSG:326{utm_zone:02d}"
-    print(f"Your UTM Zone is {project_crs}")
-    transformer = pyproj.Transformer.from_crs("EPSG:4326", project_crs, always_xy=True)
-    return transformer
+
+def detect_crs(longitude, latitude):
+    utm_zone = min(int((longitude + 180) / 6) + 1, 60)
+    epsg = f"EPSG:{'326' if latitude >= 0 else '327'}{utm_zone:02d}"
+    logger.info("UTM zone: %s", epsg)
+    return pyproj.Transformer.from_crs("EPSG:4326", epsg, always_xy=True)
 
 
 def get_length_meters(geom, transformer):
-    projected = transform(transformer.transform, geom)
-    return projected.length
+    return transform(transformer.transform, geom).length

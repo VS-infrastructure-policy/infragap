@@ -1,15 +1,19 @@
 # infragap
 
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Tests](https://img.shields.io/badge/tests-44%20passing-brightgreen)
+
 Infrastructure network connectivity diagnostics for policy analysts.
 
 ---
 
-Public agencies collect infrastructure geometry such as bike lanes, transit corridors, power lines, water mains as GeoJSON or shapefiles. Yet answering "how connected is this network?" typically requires GIS software, spatial databases, or writing graph code from scratch. Existing tools like OSMnx build graphs from OpenStreetMap road topology, which works well for streets but misrepresents cycling and other non-road infrastructure since connections are inferred from shared OSM nodes rather than physical proximity, and filtering to a single infrastructure type breaks the topology. infragap works directly on GeoJSON geometry, using spatial clustering to detect connections from the coordinates themselves.
+Public agencies collect infrastructure geometry such as bike lanes, transit corridors, power lines, water mains, as GeoJSON or shapefiles. But answering "how connected is this network?" typically requires GIS software, spatial databases, or writing graph code from scratch. infragap does it in three lines of Python: load a GeoJSON file, run a diagnosis, read the results.
 
 ```python
 import infragap
 
-net = infragap.from_file("bike_lanes.geojson")
+net = infragap.from_file("network.geojson")
 report = net.diagnose()
 print(report)
 ```
@@ -17,25 +21,26 @@ print(report)
 ```
   Network Diagnosis
   -----------------------------------
-  Total length          202.9 km
-  Segments              3,464
-  Components              330
-  Avg component           615 m
+  Total length          387.4 km
+  Segments              5,218
+  Components               43
+  Avg component      9009 m
 
   Connectivity
-    LCC length           23.9 km
-    LCC ratio            11.8%
-    Stranded             88.2%
-    Beta (e/v)           0.94
-    Alpha                0.01
-    Gamma                0.31
+    LCC length          312.1 km
+    LCC ratio           80.6%
+    Stranded            19.4%
+    Beta (e/v)           1.12
+    Alpha                0.07
+    Gamma                0.37
 
   Resilience
-    Bridges               2524
-    Edge connectivity        0
+    Bridges               841
+    Edge connectivity       1
 ```
 
-Reading this output: this particular bike lane network is heavily fragmented. Only 11.8% of the total infrastructure length sits in the largest connected component with  the rest being stranded in 329 smaller, disconnected clusters. The beta index (0.94) and alpha index (0.01) show a tree-like network with almost no route redundancy, and 2,524 of the network's edges are bridges (single points of failure whose removal would disconnect part of the network).
+Reading this output: 80.6% of the network's total length forms a single connected spine. The remaining 19.4% is stranded across 42 smaller clusters. Beta above 1.0 indicates some route redundancy; 841 bridge edges remain single points of failure whose removal would disconnect a section of the network.
+
 
 ---
 
@@ -53,6 +58,7 @@ Reading this output: this particular bike lane network is heavily fragmented. On
 - [Project structure](#project-structure)
 - [Dependencies](#dependencies)
 - [References](#references)
+- [Citing infragap](#citing-infragap)
 
 ---
 
@@ -82,27 +88,27 @@ The `Network` class is the main entry point. It loads a GeoJSON file, detects th
 
 Create a `Network` from a GeoJSON file.
 
-- **path** -- Path to a GeoJSON file with LineString or MultiLineString features.
-- **tolerance** -- Maximum distance in metres to snap nearby endpoints together (default: 5). Municipal GeoJSON data often has small digitisation gaps between segments that should be connected. The tolerance bridges these gaps. Higher values merge more aggressively; lower values preserve separation.
-- **strategies** -- Set of clustering strategies to use during graph construction. Any subset of `{"endpoints", "tjunctions", "overlaps"}`. Default (`None`): all three. See [Methodology](#methodology) for what each strategy does.
+- **path** — Path to a GeoJSON file with LineString or MultiLineString features.
+- **tolerance** — Maximum distance in metres to snap nearby endpoints together (default: 5). Municipal GeoJSON data often has small digitisation gaps between segments that should be connected. The tolerance bridges these gaps. Higher values merge more aggressively; lower values preserve separation.
+- **strategies** — Set of clustering strategies to use during graph construction. Any subset of `{"endpoints", "tjunctions", "overlaps"}`. Default (`None`): all three. See [Methodology](#methodology) for what each strategy does.
 
 ```python
 import infragap
 
 # Default tolerance (5 metres), all strategies
-net = infragap.from_file("bike_lanes.geojson")
+net = infragap.from_file("network.geojson")
 
 # Strict: only merge endpoints within 2 metres
-net = infragap.from_file("bike_lanes.geojson", tolerance=2)
+net = infragap.from_file("network.geojson", tolerance=2)
 
 # Lenient: merge endpoints within 10 metres
-net = infragap.from_file("bike_lanes.geojson", tolerance=10)
+net = infragap.from_file("network.geojson", tolerance=10)
 
 # Endpoint snapping only (no T-junction or overlap detection)
-net = infragap.from_file("bike_lanes.geojson", strategies={"endpoints"})
+net = infragap.from_file("network.geojson", strategies={"endpoints"})
 
 # Endpoints and T-junctions, but no overlap detection
-net = infragap.from_file("bike_lanes.geojson", strategies={"endpoints", "tjunctions"})
+net = infragap.from_file("network.geojson", strategies={"endpoints", "tjunctions"})
 ```
 
 #### `Network.diagnose()`
@@ -118,25 +124,25 @@ print(report)
 
 Run a zone-level diagnosis by overlaying the network with administrative boundary polygons. Returns a `ZoneReport` object.
 
-- **zones_path** -- Path to a GeoJSON file containing polygon features (neighbourhoods, municipalities, districts).
-- **name_col** -- The property name in the zone file that identifies each zone (e.g. `"NIL"`, `"name"`, `"district_id"`).
+- **zones_path** — Path to a GeoJSON file containing polygon features (neighbourhoods, municipalities, districts).
+- **name_col** — The property name in the zone file that identifies each zone (e.g. `"name"`, `"district_id"`, `"NIL"`).
 
 ```python
-zones = net.diagnose_by_zone("neighbourhoods.geojson", name_col="NIL")
+zones = net.diagnose_by_zone("districts.geojson", name_col="name")
 print(zones)
 ```
 
-| NIL          | length_km | lcc_ratio | stranded_pct | num_components | density | bridges |
+| name         | length_km | lcc_ratio | stranded_pct | num_components | density | bridges |
 |--------------|-----------|-----------|--------------|----------------|---------|---------|
-| Brera        |       3.2 |    0.6800 |         32.0 |              4 |    8.41 |      12 |
-| Navigli      |       5.1 |    0.4300 |         57.0 |              7 |    6.23 |      19 |
-| Isola        |       1.8 |    1.0000 |          0.0 |              1 |    4.50 |       8 |
+| Westside     |       8.4 |    0.9200 |          8.0 |              3 |    6.12 |      31 |
+| Central      |       5.1 |    0.6800 |         32.0 |              7 |    9.84 |      19 |
+| Northgate    |       2.1 |    1.0000 |          0.0 |              1 |    3.75 |       9 |
 
-The `density` column is km of infrastructure per km2 of zone area, projected to UTM.
+The `density` column is km of infrastructure per km² of zone area, projected to UTM.
 
 #### `Network.bridges()`
 
-Return a list of bridge edges -- connections whose removal would split a component.
+Return a list of bridge edges — connections whose removal would split a component.
 
 ```python
 bridge_edges = net.bridges()
@@ -184,18 +190,18 @@ report = net.diagnose()
 print(report)
 
 # Access individual metrics as attributes
-report.total_length_km        # 202.9
-report.segments               # 3464
-report.components             # 330
-report.avg_component_length_m # 615.0
-report.lcc_length_km          # 23.9
-report.lcc_ratio              # 0.1177
-report.stranded_pct           # 88.2
-report.beta                   # 0.94
-report.alpha                  # 0.01
-report.gamma                  # 0.31
-report.bridges                # 2524
-report.edge_connectivity      # 0
+report.total_length_km        # float
+report.segments               # int
+report.components             # int
+report.avg_component_length_m # float
+report.lcc_length_km          # float
+report.lcc_ratio              # float (0–1)
+report.stranded_pct           # float (0–100)
+report.beta                   # float
+report.alpha                  # float
+report.gamma                  # float
+report.bridges                # int
+report.edge_connectivity      # int
 
 # Export
 report.to_dict()              # plain dictionary
@@ -208,7 +214,7 @@ report.to_json()              # JSON string
 Returned by `Network.diagnose_by_zone()`. Wraps a pandas DataFrame with one row per zone.
 
 ```python
-zones = net.diagnose_by_zone("neighbourhoods.geojson", name_col="NIL")
+zones = net.diagnose_by_zone("districts.geojson", name_col="name")
 
 # Print the table
 print(zones)
@@ -238,8 +244,8 @@ Determine the correct UTM zone from a single WGS84 coordinate and return a `pypr
 ```python
 from infragap import detect_crs
 
-transformer = detect_crs(9.19, 45.46)
-# Your UTM Zone is EPSG:32632
+transformer = detect_crs(4.90, 52.37)   # Amsterdam
+# Your UTM Zone is EPSG:32631
 ```
 
 This is useful on its own any time you need to project WGS84 coordinates to metres and don't want to look up which UTM zone to use.
@@ -252,8 +258,8 @@ Compute the length of any shapely geometry in metres using a pyproj transformer.
 from infragap import detect_crs, get_length_meters
 from shapely.geometry import LineString
 
-transformer = detect_crs(9.19, 45.46)
-line = LineString([(9.18, 45.45), (9.20, 45.47)])
+transformer = detect_crs(4.90, 52.37)
+line = LineString([(4.88, 52.36), (4.92, 52.38)])
 print(f"{get_length_meters(line, transformer):.1f} metres")
 ```
 
@@ -266,25 +272,25 @@ Read a GeoJSON file and return a flat list of `(LineString, properties)` tuples.
 ```python
 from infragap import load_geojson
 
-lines = load_geojson("bike_lanes.geojson")
+lines = load_geojson("network.geojson")
 print(f"{len(lines)} segments")
 
 geom, props = lines[0]
 print(geom.geom_type)   # "LineString"
-print(props)             # {"name": "Via Dante", ...}
+print(props)             # {"name": "Main Street", ...}
 ```
 
 #### `infragap.build_graph(lines, tolerance, transformer, strategies=None)`
 
-Build a networkx graph from a list of `(LineString, properties)` tuples. This is the core algorithm -- it clusters lines using spatial strategies (endpoint proximity, T-junctions, overlapping segments) and constructs a graph with `length_m` edge attributes.
+Build a networkx graph from a list of `(LineString, properties)` tuples. This is the core algorithm — it clusters lines using spatial strategies (endpoint proximity, T-junctions, overlapping segments) and constructs a graph with `length_m` edge attributes.
 
-- **strategies** -- Set of clustering strategies. Any subset of `{"endpoints", "tjunctions", "overlaps"}`. Default (`None`): all three.
+- **strategies** — Set of clustering strategies. Any subset of `{"endpoints", "tjunctions", "overlaps"}`. Default (`None`): all three.
 
 ```python
 from infragap import load_geojson, detect_crs, build_graph
 
-lines = load_geojson("bike_lanes.geojson")
-transformer = detect_crs(9.19, 45.46)
+lines = load_geojson("network.geojson")
+transformer = detect_crs(4.90, 52.37)
 
 # All strategies (default)
 G = build_graph(lines, tolerance=5, transformer=transformer)
@@ -331,7 +337,7 @@ Intersect a network graph with zone boundary polygons and compute per-zone metri
 ```python
 from infragap import overlay
 
-df, geometries = overlay(G, "neighbourhoods.geojson", "NIL", transformer)
+df, geometries = overlay(G, "districts.geojson", "name", transformer)
 print(df)
 ```
 
@@ -351,11 +357,11 @@ print(df)
 
 | Metric | Formula | Range | Interpretation |
 |--------|---------|-------|---------------|
-| **LCC ratio** | LCC length / total length | 0 -- 1 | Share of infrastructure in the largest connected component. The single most important fragmentation indicator. 1.0 = fully connected. |
-| **Stranded %** | (1 - LCC ratio) x 100 | 0 -- 100 | Infrastructure disconnected from the main network. |
-| **Beta** | e / v | 0 -- ... | Edges per node. Below 1.0 = tree-like (no alternative routes). Above 1.0 = loops and redundancy exist. |
-| **Alpha** | (e - v + p) / (2v - 5) | 0 -- 1 | Meshedness (Kansky 1963). What fraction of all possible independent circuits exist. 0 = no loops, 1 = maximum redundancy. |
-| **Gamma** | e / 3(v - 2) | 0 -- 1 | Connectivity (Kansky 1963). What fraction of all possible direct connections exist. |
+| **LCC ratio** | LCC length / total length | 0 — 1 | Share of infrastructure in the largest connected component. The single most important fragmentation indicator. 1.0 = fully connected. |
+| **Stranded %** | (1 − LCC ratio) × 100 | 0 — 100 | Infrastructure disconnected from the main network. |
+| **Beta** | e / v | 0 — ... | Edges per node. Below 1.0 = tree-like (no alternative routes). Above 1.0 = loops and redundancy exist. |
+| **Alpha** | (e − v + p) / (2v − 5) | 0 — 1 | Meshedness (Kansky 1963). What fraction of all possible independent circuits exist. 0 = no loops, 1 = maximum redundancy. |
+| **Gamma** | e / 3(v − 2) | 0 — 1 | Connectivity (Kansky 1963). What fraction of all possible direct connections exist. |
 
 Where *e* = edges, *v* = nodes, *p* = number of connected components.
 
@@ -380,9 +386,9 @@ All line segments are grouped into connected clusters using a Union-Find data st
 
 2. **T-junction detection** (`"tjunctions"`). A segment endpoint that falls within tolerance of the *interior* of another segment creates a connection. This captures cases common in municipal data where one lane meets another mid-block rather than at an intersection.
 
-3. **Overlap detection** (`"overlaps"`). Segments that geometrically intersect or overlap are merged. This handles duplicate digitisation and crossing lines. Parallel lines that do not touch are kept separate to avoid falsely merging distinct infrastructure (e.g. bike lanes on opposite sides of a road).
+3. **Overlap detection** (`"overlaps"`). Segments that geometrically intersect or overlap are merged. This handles duplicate digitisation and crossing lines. Parallel lines that do not touch are kept separate to avoid falsely merging distinct infrastructure (e.g. lanes on opposite sides of a road).
 
-Disabling strategies is useful for cross-tool comparisons (e.g. endpoint-only mode to match simpler tools like OSMnx) or for isolating the effect of each strategy on a particular dataset.
+Disabling strategies is useful for cross-tool comparisons (e.g. endpoint-only mode to match simpler tools) or for isolating the effect of each strategy on a particular dataset.
 
 ### Phase 2: Graph construction
 
@@ -407,7 +413,7 @@ All distance calculations use UTM projection, automatically detected from the in
 
 ## Known limitations
 
-- **Zone overlay geometry.** After graph construction, edges are represented as straight lines between their endpoint nodes. Original line curvature (intermediate vertices) is not preserved. This makes the spatial intersection with zone boundaries approximate. For most urban-scale analysis this has negligible impact.
+- **Zone overlay geometry.** When called via the `Network` class, zone overlay uses the original curved geometries clipped to each zone boundary, so length measurements are accurate even for segments that straddle boundaries. The low-level `overlay()` function falls back to straight-line edges if original geometries are not supplied.
 
 - **Edge connectivity for fragmented networks.** Edge connectivity is 0 by definition for any network with more than one connected component (it is already disconnected). For fragmented infrastructure, the bridge count is a more informative resilience metric.
 
@@ -463,8 +469,20 @@ pytest
 
 - Kansky, K.J. (1963). *Structure of Transportation Networks*. University of Chicago Department of Geography Research Papers.
 - Rodrigue, J.-P. (2020). *The Geography of Transport Systems*. 5th edition, Routledge.
-- Barthelemy, M. (2011). Spatial networks. *Physics Reports*, 499(1-3), 1-101.
-- Buhl, J., et al. (2006). Topological patterns in street networks of self-organized urban settlements. *The European Physical Journal B*, 49(4), 513-522.
+- Barthelemy, M. (2011). Spatial networks. *Physics Reports*, 499(1–3), 1–101.
+- Buhl, J., et al. (2006). Topological patterns in street networks of self-organized urban settlements. *The European Physical Journal B*, 49(4), 513–522.
+- Szell, M., et al. (2022). Growing urban bicycle networks. *Scientific Reports*, 12, 6765.
+
+---
+
+## Citing infragap
+
+If you use infragap in your research, please cite:
+
+```
+Simić, V. (2026). infragap: Infrastructure network diagnostics (Python library).
+Available at: github.com/VS-infrastructure-policy/infragap
+```
 
 ---
 

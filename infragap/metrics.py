@@ -34,7 +34,6 @@ def compute_metrics(G):
     avg_comp_length_m = total_length_m / num_components if num_components > 0 else 0
 
     # Kansky indices
-
     # Beta = e/v (circuit ratio; below 1 = tree-like, above 1 = has loops)
     beta = num_edges / num_nodes if num_nodes > 0 else 0
 

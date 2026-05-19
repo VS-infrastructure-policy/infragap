@@ -1,9 +1,14 @@
+import logging
+from collections import defaultdict
+
+import networkx as nx
+from shapely import STRtree
 from shapely.geometry import Point
 from shapely.ops import transform as shapely_transform
-from shapely import STRtree
-import networkx as nx
+
 from infragap.crs import get_length_meters
-from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 
 
 class UnionFind:
@@ -16,7 +21,6 @@ class UnionFind:
         root = x
         while self.parent[root] != root:
             root = self.parent[root]
-        # Path compression
         while self.parent[x] != root:
             next_x = self.parent[x]
             self.parent[x] = root
@@ -48,12 +52,10 @@ def build_graph(lines, tolerance, transformer, strategies=None):
     line_geoms = [line for line, _ in lines]
     n = len(lines)
 
-    # Project all geometries to UTM for accurate distance measurement
     line_geoms_utm = [shapely_transform(transformer.transform, g) for g in line_geoms]
 
-    # Collect endpoints in both coordinate systems
-    endpoints_utm = []   # (Point_utm, line_index)
-    endpoint_coords = [] # original WGS84 coords
+    endpoints_utm = []
+    endpoint_coords = []
     for i in range(n):
         start_utm = Point(line_geoms_utm[i].coords[0])
         end_utm = Point(line_geoms_utm[i].coords[-1])
@@ -66,9 +68,8 @@ def build_graph(lines, tolerance, transformer, strategies=None):
     ep_tree = STRtree(ep_points_utm)
     line_tree = STRtree(line_geoms_utm)
 
-    print(f"Collected {len(endpoints_utm)} endpoints from {n} lines")
+    logger.debug("Collected %d endpoints from %d lines", len(endpoints_utm), n)
 
-    # Phase 1: cluster lines using Union-Find on line indices
     line_parent = list(range(n))
 
     def line_find(x):
@@ -82,7 +83,6 @@ def build_graph(lines, tolerance, transformer, strategies=None):
         if px != py:
             line_parent[px] = py
 
-    # Strategy 1: endpoint-to-endpoint proximity
     ep_merges = 0
     if "endpoints" in strategies:
         for i, (pt, line_i) in enumerate(endpoints_utm):
@@ -95,9 +95,8 @@ def build_graph(lines, tolerance, transformer, strategies=None):
                             line_union(line_i, line_j)
                             ep_merges += 1
 
-    print(f"  Endpoint-to-endpoint merges: {ep_merges}")
+    logger.debug("Endpoint-to-endpoint merges: %d", ep_merges)
 
-    # Strategy 2: T-junctions (endpoint near interior of another line)
     tj_merges = 0
     if "tjunctions" in strategies:
         for pt, line_i in endpoints_utm:
@@ -109,9 +108,8 @@ def build_graph(lines, tolerance, transformer, strategies=None):
                         line_union(line_i, line_j)
                         tj_merges += 1
 
-    print(f"  T-junction merges: {tj_merges}")
+    logger.debug("T-junction merges: %d", tj_merges)
 
-    # Strategy 3: overlapping/crossing lines (only merge if geometries actually intersect)
     overlap_merges = 0
     if "overlaps" in strategies:
         for i in range(n):
@@ -122,20 +120,16 @@ def build_graph(lines, tolerance, transformer, strategies=None):
                         line_union(i, j)
                         overlap_merges += 1
 
-    print(f"  Overlapping line merges: {overlap_merges}")
+    logger.debug("Overlapping line merges: %d", overlap_merges)
 
     clusters = defaultdict(list)
     for i in range(n):
         clusters[line_find(i)].append(i)
 
-    num_clusters = len(clusters)
-    print(f"Found {num_clusters} clusters")
+    logger.debug("Found %d clusters", len(clusters))
 
-    # Phase 2: build networkx graph
-    # Only merge endpoints within the same cluster to prevent cross-cluster merging
     uf = UnionFind()
 
-    # Endpoint-to-endpoint snapping within same cluster
     for i, (pt, line_i) in enumerate(endpoints_utm):
         nearby = ep_tree.query(pt.buffer(tolerance), predicate="intersects")
         for j in nearby:
@@ -145,7 +139,6 @@ def build_graph(lines, tolerance, transformer, strategies=None):
                     if ep_points_utm[i].distance(ep_points_utm[j]) <= tolerance:
                         uf.union(endpoint_coords[i], endpoint_coords[j])
 
-    # T-junction endpoint merging within same cluster
     if "tjunctions" in strategies:
         for i, (pt, line_i) in enumerate(endpoints_utm):
             nearby_lines = line_tree.query(pt.buffer(tolerance), predicate="intersects")
@@ -185,8 +178,8 @@ def build_graph(lines, tolerance, transformer, strategies=None):
             G.add_edge(node_a, node_b, length_m=length_m)
 
     G.graph["total_length_all_m"] = total_length_all
+    G.graph["line_nodes"] = line_nodes
 
-    # Reconcile: connect lines in same cluster that aren't graph-connected
     for cluster_line_ids in clusters.values():
         if len(cluster_line_ids) <= 1:
             continue
@@ -211,7 +204,11 @@ def build_graph(lines, tolerance, transformer, strategies=None):
                 other_node = next(iter(sub_comps[k]))
                 G.add_edge(first_node, other_node, length_m=0)
 
-    print(f"Built graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
-    print(f"Connected components: {nx.number_connected_components(G)}")
+    logger.info(
+        "Built graph: %d nodes, %d edges, %d components",
+        G.number_of_nodes(),
+        G.number_of_edges(),
+        nx.number_connected_components(G),
+    )
 
     return G

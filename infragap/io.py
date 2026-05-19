@@ -1,9 +1,12 @@
 import json
+import logging
 from shapely.geometry import shape
+
+logger = logging.getLogger(__name__)
 
 
 def load_geojson(path):
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
     results = []
     for feature in data["features"]:
@@ -21,5 +24,5 @@ def load_geojson(path):
             if len(geom.coords) < 2:
                 continue
             results.append((geom, props))
-    print(f"Loaded file from {path}")
+    logger.info("Loaded %d features from %s", len(results), path)
     return results
